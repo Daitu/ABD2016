@@ -1,0 +1,117 @@
+---
+title: "2016ABD数据探索"
+author: "带土"
+date: "2016年8月3日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE}
+setwd("/Users/daitu/数据分析/2016ABD")
+getwd()
+```
+
+## 加载所需要的包
+```{r message=FALSE,warning=FALSE}
+library(stringr)
+library(data.table)
+library(dplyr)
+library(VIM)
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+library(psych)
+library(corrplot)
+
+```
+## 第一步：读取数据
+1.1 item_id 每一个商品链接的独有的ID   ----字符串-------
+2.2 item_number 商品的款号          ----字符串-------  
+3.3 shop_id 销售这件商品的店铺ID        ----字符串-------
+4.4 shop_type 销售这件商品的店铺类型，分为TB_TMALL与TB_JISHI两种   ----字符串-------
+5.5 brand_name 商品的品牌名                    ----字符串-------
+6.6 item_name 商品名(商品标题)               ----字符串-------
+7.7 price 该商品的销售价格(此处对各sku取均值)
+8.8 tag_price 商品的标签价
+9.9 monthly_sales_num 商品月销量
+10.10 assessment_num 商品评价数
+11.11 monthly_sales 月销售额  -----价格乘以销量-----
+
+
+```{r message=FALSE,warning=FALSE}
+load("第二题数据/item_fact.RData")
+head(item_fact)
+summary(item_fact)
+```
+
+### 读取店铺的信息数据
+```{r}
+filename4 <- "第二题数据/shop_dsr."
+shop_dsr <- fread(filename4,header  = TRUE,sep = "\t",
+                  colClasses  = rep(c("character","numeric"),times = c(2,3)))
+
+head(shop_dsr)
+dim(shop_dsr) 
+```
+
+```{r echo=FALSE,results='hide'}
+shop_dsr <- tbl_df(shop_dsr)
+## 将数据按照店铺分组---------------------------------------
+shop <- item_fact %>%
+  dplyr::group_by(shop_id) %>%   ## 将数据按照店铺的ID进行分组
+  summarise(n_item = n_distinct(item_id),   ## 该店铺共销售了多少种商品
+            brand_number = n_distinct(brand_name), ## 该店铺共销售了几种品牌的商品
+            monthly_shop_sum = sum(monthly_sales_num), ## 该店铺的月销量
+            monthly_sales_sum = sum(monthly_sales),   ## 该店铺的月销售额
+            assessment_sum = sum(assessment_num),     ## 该店铺的评价总数
+            tag_price_mean = mean(tag_price),   # 该店铺商品的平均标签价
+            shop_type = unique(shop_type)) %>%  ## 店铺的销售方式
+  mutate(price_mean = monthly_sales_sum / monthly_shop_sum)  ## 该店铺商品的平均售价)
+dim(shop)    # 有24494家店铺
+summary(shop)
+
+## 可以发现平均销售价格会出现 0/0 为缺失值的情况，针对这种情况,将平均销售价格定位0元。
+shop$price_mean[is.na(shop$price_mean)] <- 0
+summary(shop)
+## ----------------------------------------------------------
+
+## 将 shop_dsr和shop数据连接
+sum(shop$shop_id %in% shop_dsr$shop_id)
+## 我们可以发现这两个数据集中，只有15638个店铺是相同的，其他则是不同的
+
+# aa <- left_join(shop_dsr,shop,by = "shop_id")
+
+
+## 对上面的商铺数据进行可视化探索分析
+## 查看两种销售方式的对比 -------------------------
+table(shop$shop_type)
+
+table(shop$shop_type) / dim(shop)[1]
+## 可以发现销售方式为TB_JISHI占据百分比大于97%
+## 销售方式为TB_TMALL 占据百分比不到3%
+
+```
+
+
+```{r echo=FALSE}
+p1 <- ggplot(shop) +
+  theme_bw(base_family = "STKaiti") +
+  geom_histogram(aes(n_item),binwidth = 5,color="firebrick",fill = "red",
+                 alpha = 0.6) + 
+  facet_wrap(~shop_type,scales = "free") +
+  labs(x = "销售商品数目(件)",y = "店铺的数目(家)",title = "店铺销售商品数目分布")
+
+p2 <- ggplot(shop[which(shop$n_item <= 250),]) +
+  theme_bw(base_family = "STKaiti") +
+  geom_histogram(aes(n_item),binwidth = 5,color="firebrick",fill = "red",
+                 alpha = 0.6) + 
+  facet_wrap(~shop_type,scales = "free") +
+  labs(x = "销售商品数目(<=250件)",y = "店铺的数目(家)",title = "店铺销售商品数目分布")
+
+grid.arrange(p1,p2,nrow = 2)
+```
+
+
